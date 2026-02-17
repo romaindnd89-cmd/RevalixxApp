@@ -1,16 +1,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Vérification sécurisée pour l'environnement client
-const getApiKey = () => {
-  try {
-    return process.env.API_KEY || "";
-  } catch (e) {
-    return "";
-  }
-};
-
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
 
 export const generateVenueHype = async (venueName: string, city: string) => {
   try {
