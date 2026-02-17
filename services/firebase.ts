@@ -16,24 +16,18 @@ const firebaseConfig = {
 };
 
 let app;
-let db: any = null;
+let db: any;
 
 try {
-  // Tentative sécurisée d'initialisation
-  if (typeof initializeApp === 'function') {
-    if (getApps().length === 0) {
-      app = initializeApp(firebaseConfig);
-    } else {
-      app = getApp();
-    }
-    db = getFirestore(app);
-    console.log("Firebase initialized successfully");
+  if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
   } else {
-    console.warn("Firebase SDK not fully loaded. Running in offline mode.");
+    app = getApp();
   }
+  db = getFirestore(app);
+  console.log("Firebase initialized successfully");
 } catch (error) {
   console.error("Firebase initialization error:", error);
-  // On laisse db à null pour gérer le mode dégradé
 }
 
 export const getDb = () => db;
@@ -41,7 +35,7 @@ export const getDb = () => db;
 // --- GESTION GALERIE ---
 
 export const addImageToDb = async (url: string, caption: string) => {
-  if (!db) throw new Error("Database offline");
+  if (!db) throw new Error("Database not initialized");
   try {
     const docRef = await addDoc(collection(db, "gallery"), {
       url,
@@ -57,31 +51,26 @@ export const addImageToDb = async (url: string, caption: string) => {
 };
 
 export const deleteImageFromDb = async (id: string) => {
-  if (!db) throw new Error("Database offline");
+  if (!db) throw new Error("Database not initialized");
   await deleteDoc(doc(db, "gallery", id));
 };
 
 export const subscribeToGallery = (callback: (images: any[]) => void) => {
   if (!db) return () => {};
-  try {
-    const q = query(collection(db, "gallery"), orderBy("createdAt", "desc"));
-    return onSnapshot(q, (querySnapshot: any) => {
-      const images: any[] = [];
-      querySnapshot.forEach((doc: any) => {
-        images.push({ id: doc.id, ...doc.data() });
-      });
-      callback(images);
-    }, (error: any) => console.error("Error subscribing to gallery:", error));
-  } catch (e) {
-    console.error("Firebase query error:", e);
-    return () => {};
-  }
+  const q = query(collection(db, "gallery"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (querySnapshot: any) => {
+    const images: any[] = [];
+    querySnapshot.forEach((doc: any) => {
+      images.push({ id: doc.id, ...doc.data() });
+    });
+    callback(images);
+  }, (error: any) => console.error("Error subscribing to gallery:", error));
 };
 
 // --- GESTION TOURNÉE (TOUR DATES) ---
 
 export const addTourDateToDb = async (dateObj: { venue: string; city: string; country: string; date: string; status: string }) => {
-  if (!db) throw new Error("Database offline");
+  if (!db) throw new Error("Database not initialized");
   try {
     await addDoc(collection(db, "tour_dates"), {
       ...dateObj,
@@ -94,23 +83,19 @@ export const addTourDateToDb = async (dateObj: { venue: string; city: string; co
 };
 
 export const deleteTourDateFromDb = async (id: string) => {
-  if (!db) throw new Error("Database offline");
+  if (!db) throw new Error("Database not initialized");
   await deleteDoc(doc(db, "tour_dates", id));
 };
 
 export const subscribeToTourDates = (callback: (dates: any[]) => void) => {
   if (!db) return () => {};
-  try {
-    const q = query(collection(db, "tour_dates"), orderBy("date", "asc"));
-    return onSnapshot(q, (querySnapshot: any) => {
-      const dates: any[] = [];
-      querySnapshot.forEach((doc: any) => {
-        dates.push({ id: doc.id, ...doc.data() });
-      });
-      callback(dates);
-    }, (error: any) => console.error("Error subscribing to tour dates:", error));
-  } catch (e) {
-    console.error("Firebase query error:", e);
-    return () => {};
-  }
+  // On récupère tout, on triera côté client pour séparer passé/futur
+  const q = query(collection(db, "tour_dates"), orderBy("date", "asc"));
+  return onSnapshot(q, (querySnapshot: any) => {
+    const dates: any[] = [];
+    querySnapshot.forEach((doc: any) => {
+      dates.push({ id: doc.id, ...doc.data() });
+    });
+    callback(dates);
+  }, (error: any) => console.error("Error subscribing to tour dates:", error));
 };
