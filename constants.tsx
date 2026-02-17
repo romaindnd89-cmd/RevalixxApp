@@ -4,7 +4,7 @@ import { Artist, TourDate, VideoContent, GalleryImage } from './types';
 export const ARTISTS: Artist[] = [
   {
     name: 'ALIXX',
-    instagram: 'alix',
+    instagram: 'alixWarning',
     role: 'RAWSTYLE / HARDSTYLE',
     description: 'Forging a path through the darkest corners of rawstyle, Alixx combines atmospheric melodies with shattering kicks. His sound is defined by industrial influences and high-tension energy.',
     // Image sombre, silhouette DJ avec lumières
