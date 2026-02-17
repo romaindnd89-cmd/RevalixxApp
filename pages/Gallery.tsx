@@ -2,12 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { GALLERY_IMAGES } from '../constants';
 import { GalleryImage } from '../types';
-import { addImageToDb, deleteImageFromDb, subscribeToGallery } from '../services/firebase';
 
 const Gallery: React.FC = () => {
   const [images, setImages] = useState<GalleryImage[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isDbConnected, setIsDbConnected] = useState(true); // Toujours true maintenant
   
   // États pour le modal de login
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -16,44 +14,46 @@ const Gallery: React.FC = () => {
 
   // États pour l'upload
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [uploadMode, setUploadMode] = useState<'link' | 'file'>('file');
-  
-  // Formulaire Upload
   const [newImageUrl, setNewImageUrl] = useState('');
   const [newCaption, setNewCaption] = useState('');
-  
-  // Gestion ImgBB
-  const [imgbbKey, setImgbbKey] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
 
-  // 1. Initialisation au chargement
+  // Chargement des données au démarrage
   useEffect(() => {
-    // Vérifier Admin
+    // Vérifier si admin est déjà loggé
     const adminStatus = localStorage.getItem('revalixx_admin_active');
     if (adminStatus === 'true') setIsAdmin(true);
 
-    // Charger clé ImgBB
-    const savedImgKey = localStorage.getItem('revalixx_imgbb_key');
-    if (savedImgKey) setImgbbKey(savedImgKey);
+    // Charger les images
+    try {
+      // 1. Charger les images custom (ajoutées par l'admin)
+      const savedCustomImages = localStorage.getItem('revalixx_custom_images');
+      let customImages: GalleryImage[] = [];
+      if (savedCustomImages) {
+        const parsed = JSON.parse(savedCustomImages);
+        if (Array.isArray(parsed)) customImages = parsed;
+      }
 
-    // S'abonner directement à Firebase
-    const unsubscribe = subscribeToGallery((dbImages) => {
-        // Fusionner DB images avec Static images (filtrées)
-        const deletedDefaultsStr = localStorage.getItem('revalixx_deleted_defaults');
-        let deletedIds: string[] = deletedDefaultsStr ? JSON.parse(deletedDefaultsStr) : [];
-        const visibleDefaults = GALLERY_IMAGES.filter(img => !deletedIds.includes(String(img.id)));
-        
-        // Priorité aux images DB
-        setImages([...dbImages, ...visibleDefaults]);
-    });
+      // 2. Charger la blacklist des images par défaut supprimées
+      const deletedDefaultsStr = localStorage.getItem('revalixx_deleted_defaults');
+      let deletedIds: string[] = [];
+      if (deletedDefaultsStr) {
+        deletedIds = JSON.parse(deletedDefaultsStr);
+      }
 
-    return () => unsubscribe();
+      // 3. Filtrer les images par défaut pour exclure celles supprimées
+      // On convertit les IDs en String pour éviter les erreurs de type
+      const visibleDefaults = GALLERY_IMAGES.filter(img => !deletedIds.includes(String(img.id)));
+
+      // 4. Combiner (Custom en premier)
+      setImages([...customImages, ...visibleDefaults]);
+
+    } catch (e) {
+      console.error("Error loading gallery data", e);
+      setImages(GALLERY_IMAGES);
+    }
   }, []);
 
-  // --- ACTIONS ADMIN ---
-
+  // Login Admin
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (adminPassword === 'revalixx_admin') {
@@ -67,116 +67,70 @@ const Gallery: React.FC = () => {
     }
   };
 
-  const handleSaveKey = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const key = e.target.value;
-    setImgbbKey(key);
-    localStorage.setItem('revalixx_imgbb_key', key);
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
-      setUploadError('');
-    }
-  };
-
-  const uploadToImgBB = async (): Promise<string | null> => {
-    if (!selectedFile || !imgbbKey) {
-        setUploadError("Missing File or API Key");
-        return null;
-    }
-
-    const formData = new FormData();
-    formData.append("image", selectedFile);
-
-    try {
-        const response = await fetch(`https://api.imgbb.com/1/upload?key=${imgbbKey}`, {
-            method: "POST",
-            body: formData,
-        });
-
-        const data = await response.json();
-        if (data.success) {
-            return data.data.url;
-        } else {
-            throw new Error(data.error?.message || "Upload failed");
-        }
-    } catch (error: any) {
-        setUploadError("Upload Error: " + error.message);
-        return null;
-    }
-  };
-
-  // AJOUT D'UNE IMAGE
-  const handleAddImage = async (e: React.FormEvent) => {
+  // Ajout d'une image
+  const handleAddImage = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newImageUrl) return;
+
+    const newImage: GalleryImage = {
+      id: `local-img-${Date.now()}`,
+      url: newImageUrl,
+      caption: newCaption || 'NO CAPTION',
+      date: new Date().getFullYear().toString()
+    };
+
+    const currentCustomImages = images.filter(img => String(img.id).startsWith('local-'));
+    const updatedCustomImages = [newImage, ...currentCustomImages];
     
-    let finalUrl = newImageUrl;
-
-    if (uploadMode === 'file') {
-        if (!selectedFile) return;
-        setIsUploading(true);
-        const uploadedUrl = await uploadToImgBB();
-        setIsUploading(false);
-        if (!uploadedUrl) return;
-        finalUrl = uploadedUrl;
-    }
-
-    if (!finalUrl) return;
-    const finalCaption = newCaption || 'NO CAPTION';
-
-    // Envoyer au Cloud (Firebase)
-    try {
-      await addImageToDb(finalUrl, finalCaption);
-      setIsUploadOpen(false);
-      setNewImageUrl('');
-      setNewCaption('');
-      setSelectedFile(null);
-    } catch (err: any) {
-      console.error("DB Error", err);
-      // Fallback local storage si erreur réseau
-      setUploadError("Network Error. Saving locally instead.");
-      
-      const newImage: GalleryImage = {
-        id: `local-img-${Date.now()}`,
-        url: finalUrl,
-        caption: finalCaption,
-        date: new Date().getFullYear().toString()
-      };
-      setImages([newImage, ...images]);
-      setIsUploadOpen(false);
-    }
+    // Sauvegarder dans localStorage
+    localStorage.setItem('revalixx_custom_images', JSON.stringify(updatedCustomImages));
+    
+    // Mettre à jour l'état local
+    setImages([newImage, ...images]);
+    
+    // Reset form
+    setIsUploadOpen(false);
+    setNewImageUrl('');
+    setNewCaption('');
   };
 
-  // SUPPRESSION
-  const handleDeleteImage = async (id: string, e: React.MouseEvent) => {
+  // Suppression d'une image
+  const handleDeleteImage = (id: string, e: React.MouseEvent) => {
+    // Empêcher la propagation pour éviter les conflits de clics
     e.preventDefault();
     e.stopPropagation();
 
-    // 1. Si c'est une image de la DB (id n'est pas 'local-' et pas un chiffre simple)
-    if (!String(id).startsWith('local-') && isNaN(Number(id))) {
-      try {
-        await deleteImageFromDb(id);
-      } catch (err) {
-        console.error("Delete failed", err);
-      }
-    }
-    // 2. Gestion LocalStorage (Fallback & Static Blacklist)
-    else {
-      setImages(prevImages => prevImages.filter(img => String(img.id) !== String(id)));
-      
-      const idStr = String(id);
-      if (idStr.startsWith('local-')) {
-          // Suppression locale
-      } else {
-          // Masquer image statique par défaut
-          const deletedDefaultsStr = localStorage.getItem('revalixx_deleted_defaults');
-          let deletedIds: string[] = deletedDefaultsStr ? JSON.parse(deletedDefaultsStr) : [];
-          if (!deletedIds.includes(idStr)) {
-              deletedIds.push(idStr);
-              localStorage.setItem('revalixx_deleted_defaults', JSON.stringify(deletedIds));
-          }
-      }
+    console.log("Deleting image:", id);
+
+    // NOTE: Suppression de la fenêtre de confirmation 'window.confirm' 
+    // car elle peut être bloquée dans certains environnements de preview.
+    
+    // 1. Mise à jour immédiate de l'interface (State)
+    setImages(prevImages => prevImages.filter(img => String(img.id) !== String(id)));
+
+    // 2. Persistance de la suppression (LocalStorage)
+    try {
+        const idStr = String(id);
+        if (idStr.startsWith('local-')) {
+            // C'est une image custom -> on la retire du tableau custom
+            const savedCustom = localStorage.getItem('revalixx_custom_images');
+            if (savedCustom) {
+                const parsed: GalleryImage[] = JSON.parse(savedCustom);
+                const updated = parsed.filter(img => String(img.id) !== idStr);
+                localStorage.setItem('revalixx_custom_images', JSON.stringify(updated));
+            }
+        } else {
+            // C'est une image par défaut -> on ajoute son ID à la blacklist
+            const deletedDefaultsStr = localStorage.getItem('revalixx_deleted_defaults');
+            let deletedIds: string[] = deletedDefaultsStr ? JSON.parse(deletedDefaultsStr) : [];
+            
+            if (!deletedIds.includes(idStr)) {
+                deletedIds.push(idStr);
+                localStorage.setItem('revalixx_deleted_defaults', JSON.stringify(deletedIds));
+            }
+        }
+    } catch (err) {
+        console.error("Storage error:", err);
     }
   };
 
@@ -188,15 +142,14 @@ const Gallery: React.FC = () => {
           <h2 className="text-4xl md:text-6xl font-heading font-bold relative z-10 uppercase">THE VOID</h2>
           <div className="h-1 w-20 bg-red-600 mx-auto mt-6"></div>
           
-          <div className="mt-8 flex justify-center gap-4">
+          <div className="mt-8">
             {isAdmin ? (
-                 <button 
-                   onClick={() => setIsUploadOpen(true)}
-                   className="px-6 py-3 border border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-colors font-heading text-[10px] tracking-widest uppercase flex items-center gap-2"
-                 >
-                   <span>+ UPLOAD TO ARCHIVE</span>
-                   <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse ml-2" title="Cloud Active"></span>
-                 </button>
+               <button 
+                 onClick={() => setIsUploadOpen(true)}
+                 className="px-6 py-3 border border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-colors font-heading text-[10px] tracking-widest uppercase"
+               >
+                 + UPLOAD TO ARCHIVE
+               </button>
             ) : (
                <button 
                  onClick={() => setIsLoginModalOpen(true)}
@@ -233,91 +186,33 @@ const Gallery: React.FC = () => {
         {isUploadOpen && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center p-6">
             <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={() => setIsUploadOpen(false)}></div>
-            <div className="relative w-full max-w-lg glass-card p-8 border border-white/10 bg-black">
-              <h2 className="text-2xl font-heading mb-6 uppercase">ADD VISUAL</h2>
-              
-              {/* Tabs */}
-              <div className="flex mb-6 border-b border-white/10">
-                <button 
-                    onClick={() => setUploadMode('file')}
-                    className={`flex-1 py-3 text-[10px] font-heading tracking-widest transition-colors ${uploadMode === 'file' ? 'text-red-600 border-b border-red-600' : 'text-gray-500 hover:text-white'}`}
-                >
-                    FILE UPLOAD
-                </button>
-                <button 
-                    onClick={() => setUploadMode('link')}
-                    className={`flex-1 py-3 text-[10px] font-heading tracking-widest transition-colors ${uploadMode === 'link' ? 'text-red-600 border-b border-red-600' : 'text-gray-500 hover:text-white'}`}
-                >
-                    DIRECT LINK
-                </button>
-              </div>
-
+            <div className="relative w-full max-w-lg glass-card p-8 border border-white/10">
+              <h2 className="text-2xl font-heading mb-8 uppercase">ADD VISUAL</h2>
               <form onSubmit={handleAddImage} className="space-y-6">
-                
-                {/* Mode FILE UPLOAD */}
-                {uploadMode === 'file' && (
-                    <div className="space-y-4">
-                        <div className="bg-red-900/10 border border-red-900/30 p-4 rounded">
-                            <label className="block text-[9px] font-heading tracking-widest text-red-400 mb-2">IMGBB API KEY (REQUIRED)</label>
-                            <input 
-                                type="text" 
-                                value={imgbbKey}
-                                onChange={handleSaveKey}
-                                className="w-full bg-black border border-white/10 px-3 py-2 text-white text-xs focus:border-red-600 outline-none"
-                                placeholder="Paste your API Key here..."
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-[10px] font-heading tracking-widest text-gray-500 mb-2">SELECT IMAGE</label>
-                            <input 
-                                type="file" 
-                                accept="image/*"
-                                onChange={handleFileSelect}
-                                className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:border-0 file:text-[10px] file:font-heading file:tracking-widest file:bg-red-600 file:text-white hover:file:bg-red-700 cursor-pointer"
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {/* Mode DIRECT LINK */}
-                {uploadMode === 'link' && (
-                    <div>
-                        <label className="block text-[10px] font-heading tracking-widest text-gray-500 mb-2">IMAGE URL</label>
-                        <input 
-                            type="text" 
-                            value={newImageUrl}
-                            onChange={(e) => setNewImageUrl(e.target.value)}
-                            className="w-full bg-black border border-white/10 px-4 py-3 text-white focus:border-red-600 outline-none"
-                            placeholder="https://..."
-                        />
-                    </div>
-                )}
-
+                <div>
+                  <label className="block text-[10px] font-heading tracking-widest text-gray-500 mb-2">IMAGE URL</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={newImageUrl}
+                    onChange={(e) => setNewImageUrl(e.target.value)}
+                    className="w-full bg-black border border-white/10 px-4 py-3 text-white focus:border-red-600 outline-none"
+                    placeholder="https://..."
+                  />
+                </div>
                 <div>
                   <label className="block text-[10px] font-heading tracking-widest text-gray-500 mb-2">CAPTION</label>
                   <input 
                     type="text" 
                     value={newCaption}
                     onChange={(e) => setNewCaption(e.target.value)}
-                    className="w-full bg-black border border-white/10 px-4 py-3 text-white focus:border-red-600 outline-none uppercase"
+                    className="w-full bg-black border border-white/10 px-4 py-3 text-white focus:border-red-600 outline-none"
                     placeholder="EVENT NAME / LOCATION"
                   />
                 </div>
-
-                {uploadError && (
-                    <div className="text-red-500 text-xs font-heading">{uploadError}</div>
-                )}
-
                 <div className="flex gap-4 pt-4">
                   <button type="button" onClick={() => setIsUploadOpen(false)} className="flex-1 py-3 border border-white/10 text-gray-400 font-heading text-[10px] tracking-widest hover:text-white">CANCEL</button>
-                  <button 
-                    type="submit" 
-                    disabled={isUploading || (uploadMode === 'file' && !selectedFile)}
-                    className={`flex-1 py-3 font-heading text-[10px] tracking-widest transition-all ${isUploading ? 'bg-gray-800 text-gray-500 cursor-wait' : 'bg-red-600 text-white hover:bg-red-700'}`}
-                  >
-                    {isUploading ? 'UPLOADING...' : 'CONFIRM & SYNC'}
-                  </button>
+                  <button type="submit" className="flex-1 py-3 bg-red-600 text-white font-heading text-[10px] tracking-widest hover:bg-red-700">UPLOAD</button>
                 </div>
               </form>
             </div>
@@ -352,7 +247,7 @@ const Gallery: React.FC = () => {
                         className="w-full py-2 bg-red-900/20 border border-red-600/50 text-red-500 hover:bg-red-600 hover:text-white transition-all font-heading text-[10px] tracking-widest uppercase flex items-center justify-center gap-2 cursor-pointer"
                     >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        <span>DELETE</span>
+                        <span>DELETE IMAGE</span>
                     </button>
                   </div>
                 )}

@@ -47,10 +47,10 @@ const App: React.FC = () => {
             
             {/* Correction responsive : flex-wrap + gap au lieu de space-x fixe */}
             <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 md:gap-8 text-[10px] font-heading tracking-widest text-gray-400 w-full md:w-auto">
-              <a href="https://www.instagram.com/revalixxoff?igsh=MWdoMHdocGs0b3V2Ng==" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 text-white transition-colors">INSTAGRAM</a>
-              <span className="opacity-30 cursor-default" title="Coming Soon">SOUNDCLOUD</span>
-              <span className="opacity-30 cursor-default" title="Coming Soon">YOUTUBE</span>
-              <span className="opacity-30 cursor-default" title="Coming Soon">SPOTIFY</span>
+              <a href="https://instagram.com/revalixxoff" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">INSTAGRAM</a>
+              <a href="#" className="hover:text-white transition-colors">SOUNDCLOUD</a>
+              <a href="#" className="hover:text-white transition-colors">YOUTUBE</a>
+              <a href="#" className="hover:text-white transition-colors">SPOTIFY</a>
             </div>
             
             <div className="text-[10px] font-heading text-gray-600 text-center md:text-right">
