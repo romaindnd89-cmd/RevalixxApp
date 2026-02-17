@@ -30,17 +30,21 @@ const Home: React.FC = () => {
     const adminStatus = localStorage.getItem('revalixx_admin_active');
     if (adminStatus === 'true') setIsAdmin(true);
 
-    // 2. Load Live Config
-    const savedLive = localStorage.getItem('revalixx_live_config');
-    if (savedLive) {
-      setLiveConfig(JSON.parse(savedLive));
-    }
+    // 2. Load Live Config (Safe)
+    try {
+        const savedLive = localStorage.getItem('revalixx_live_config');
+        if (savedLive) {
+          setLiveConfig(JSON.parse(savedLive));
+        }
+    } catch (e) { console.error("Error loading live config", e); }
 
-    // 3. Load Custom Next Gig
-    const savedGig = localStorage.getItem('revalixx_next_gig');
-    if (savedGig) {
-      setCustomGig(JSON.parse(savedGig));
-    }
+    // 3. Load Custom Next Gig (Safe)
+    try {
+        const savedGig = localStorage.getItem('revalixx_next_gig');
+        if (savedGig) {
+          setCustomGig(JSON.parse(savedGig));
+        }
+    } catch (e) { console.error("Error loading custom gig", e); }
   }, []);
 
   // --- HANDLERS D'EFFETS ---
